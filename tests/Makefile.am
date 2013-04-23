@@ -13,7 +13,7 @@ check_PROGRAMS = \
 SUBDIRS = modeprint
 
 if HAVE_LIBKMS
-SUBDIRS += kmstest modetest
+SUBDIRS += kmstest modetest xlnxtest
 endif
 
 if HAVE_RADEON
