@@ -582,7 +582,6 @@ set_plane(struct kms_driver *kms, struct connector *c, struct plane *p)
 			strerror(errno));
 		return -1;
 	}
-
 	for (i = 0; i < plane_resources->count_planes && !plane_id; i++) {
 		ovr = drmModeGetPlane(fd, plane_resources->planes[i]);
 		if (!ovr) {
@@ -591,8 +590,9 @@ set_plane(struct kms_driver *kms, struct connector *c, struct plane *p)
 			return -1;
 		}
 
-		if ((ovr->possible_crtcs & (1 << c->pipe)) && !ovr->crtc_id)
+		if ((ovr->possible_crtcs & (1 << c->pipe))) {
 			plane_id = ovr->plane_id;
+		}
 
 		drmModeFreePlane(ovr);
 	}
@@ -605,16 +605,18 @@ set_plane(struct kms_driver *kms, struct connector *c, struct plane *p)
 		return -1;
 	}
 
-	plane_bo = create_test_buffer(kms, p->fourcc, p->w, p->h, handles,
-				      pitches, offsets, PATTERN_TILES);
-	if (plane_bo == NULL)
-		return -1;
+	if (!p->fb_id) {
+		plane_bo = create_test_buffer(kms, p->fourcc, p->w, p->h, handles,
+				pitches, offsets, PATTERN_TILES);
+		if (plane_bo == NULL)
+			return -1;
 
-	/* just use single plane format for now.. */
-	if (drmModeAddFB2(fd, p->w, p->h, p->fourcc,
-			handles, pitches, offsets, &p->fb_id, plane_flags)) {
-		fprintf(stderr, "failed to add fb: %s\n", strerror(errno));
-		return -1;
+		/* just use single plane format for now.. */
+		if (drmModeAddFB2(fd, p->w, p->h, p->fourcc,
+					handles, pitches, offsets, &p->fb_id, plane_flags)) {
+			fprintf(stderr, "failed to add fb: %s\n", strerror(errno));
+			return -1;
+		}
 	}
 
 	/* ok, boring.. but for now put in middle of screen: */
@@ -632,6 +634,8 @@ set_plane(struct kms_driver *kms, struct connector *c, struct plane *p)
 		return -1;
 	}
 
+	drmModeFreePlaneResources(plane_resources);
+
 	return 0;
 }
 
@@ -641,7 +645,7 @@ set_mode(struct connector *c, int count, struct plane *p, int plane_count,
 {
 	struct kms_driver *kms;
 	struct kms_bo *bo, *other_bo;
-	unsigned int fb_id, other_fb_id;
+	unsigned int fb_id = 0, other_fb_id;
 	int i, j, ret, width, height, x;
 	uint32_t handles[4], pitches[4], offsets[4] = {0}; /* we only use [0] */
 	drmEventContext evctx;
@@ -682,21 +686,21 @@ set_mode(struct connector *c, int count, struct plane *p, int plane_count,
 			kms_bo_unmap(bo);
 		} else {
 			/* vmda may not be in reset from previous run, so reset to make sure */
-			reset_xlnx_vdma();
 			fill_test_buffer(kms, c->fourcc, width, height, handles, pitches, offsets,
 					loop_count % 3, bo, NULL);
 		}
 
 		printf("--> enter to update fb\n");
 		getchar();
-		loop_count++;
 
-		ret = drmModeAddFB2(fd, width, height, c->fourcc,
-				handles, pitches, offsets, &fb_id, 0);
-		if (ret) {
-			fprintf(stderr, "failed to add fb (%ux%u): %s\n",
-					width, height, strerror(errno));
-			return;
+		if (!fb_id) {
+			ret = drmModeAddFB2(fd, width, height, c->fourcc,
+					handles, pitches, offsets, &fb_id, 0);
+			if (ret) {
+				fprintf(stderr, "failed to add fb (%ux%u): %s\n",
+						width, height, strerror(errno));
+				return;
+			}
 		}
 
 		x = 0;
@@ -723,6 +727,7 @@ set_mode(struct connector *c, int count, struct plane *p, int plane_count,
 					if (set_plane(kms, &c[i], &p[j]))
 						return;
 		}
+		loop_count++;
 	}
 
 	printf("--> enter to exit\n");
@@ -821,7 +826,7 @@ int main(int argc, char **argv)
 	int c;
 	int encoders = 0, connectors = 0, crtcs = 0, planes = 0, framebuffers = 0;
 	int test_tpg = 0;
-	char *modules[] = { "axi_hdmi_drm" };
+	char *modules[] = { "zynq_drm" };
 	unsigned int i;
 	int count = 0, plane_count = 0;
 	struct connector con_args[2];
